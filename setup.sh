@@ -15,3 +15,5 @@ eval `ssh-agent`
 ssh-add ~/.ssh/id_ed25519
 git config --global user.email "nicholas.jacobs@maine.edu"
 git config --global user.name "Nicholas Jacobs"
+
+pip install --upgrade torch
