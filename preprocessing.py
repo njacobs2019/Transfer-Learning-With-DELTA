@@ -1,4 +1,4 @@
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset, random_split
 from torchvision import datasets, transforms
 
 
@@ -55,3 +55,24 @@ def cifar10_datasets(val=False):
 
     # Case without validation set
     return {"train": ds, "test": test_ds}
+
+
+def mini_cifar10_datasets(val=False, imgs=100):
+    """
+    Returns a shrunk version of cifar10 for testing purposes
+    Includes the first 100 images in each dataset
+    """
+
+    ds = cifar10_datasets(val=val)
+    subset_indices = range(0, 100)
+
+    for key in ds.keys():
+        ds[key] = Subset(ds[key], subset_indices)
+
+    return ds
+
+
+if __name__ == "__main__":
+    ds = cifar10_datasets(val=True)
+
+    print(ds)
