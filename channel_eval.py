@@ -1,51 +1,44 @@
 # -*- coding: utf-8 -*-
-# from __future__ import print_function, division
+from __future__ import print_function, division
 
-# import os
-# import sys
+import os
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-# import torch.nn.functional as F
-# from torchvision import datasets, models, transforms
+import torch.nn.functional as F
+from torchvision import datasets, models, transforms
 from torchvision.models import resnet50
-from torchvision.models.resnet import ResNet50_Weights
 import time
-
-# import argparse
+import argparse
 import math
 import json
-
-# import pickle
-
-# import numpy as np
-# from torchnet import meter
-# from PIL import ImageFile
+import pickle
+import numpy as np
+from torchnet import meter
+from PIL import ImageFile
 
 from preprocessing import cifar10_datasets
 
-# ImageFile.LOAD_TRUNCATED_IMAGES = True
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 ## Parses command line arguments
-# parser = argparse.ArgumentParser(description="DELTA")
-# parser.add_argument("--data_dir")
-# parser.add_argument("--channel_wei")
-# parser.add_argument(
-#     "--base_model",
-#     choices=["resnet50", "resnet101", "inceptionv3"],
-#     default="resnet101",
-# )
-# parser.add_argument(
-#     "--base_task", choices=["imagenet", "places365"], default="imagenet"
-# )
-# parser.add_argument("--lr_init", type=float, default=0.01)
+parser = argparse.ArgumentParser(description="DELTA")
+parser.add_argument("--data_dir")
+parser.add_argument("--channel_wei")
+parser.add_argument(
+    "--base_model",
+    choices=["resnet50", "resnet101", "inceptionv3"],
+    default="resnet101",
+)
+parser.add_argument(
+    "--base_task", choices=["imagenet", "places365"], default="imagenet"
+)
+parser.add_argument("--lr_init", type=float, default=0.01)
 
-# args = parser.parse_args()
-# print(args)
-
-lr_init = 0.01
+args = parser.parse_args()
+print(args)
 
 ## *******
 
@@ -83,9 +76,7 @@ hook_layers = [
     "layer4.2.conv3",
 ]
 
-# model_target = resnet50(pretrained=True)
-model_target = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
-
+model_target = resnet50(pretrained=True)
 model_target.fc = nn.Linear(2048, num_classes)
 model_target = model_target.to(device)
 
@@ -97,7 +88,7 @@ def train_classifier(model):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(
         filter(lambda p: p.requires_grad, model.parameters()),
-        lr=lr_init,
+        lr=args.lr_init,
         momentum=0.9,
         weight_decay=1e-4,
     )
@@ -112,6 +103,7 @@ def train_classifier(model):
         print("-" * 10)
         for phase in ["train", "test"]:
             if phase == "train":
+                scheduler.step()
                 model.train()  # Set model to training mode
             else:
                 model.eval()  # Set model to evaluate mode
@@ -142,7 +134,6 @@ def train_classifier(model):
                 if phase == "train":
                     loss.backward()
                     optimizer.step()
-                    scheduler.step()
 
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
