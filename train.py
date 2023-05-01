@@ -1,130 +1,59 @@
-# -*- coding: utf-8 -*-
-from __future__ import print_function, division
-
+import json
+import math
 import os
 import sys
+import time
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from torchvision import datasets, models, transforms
-from torchvision.models import resnet50, resnet101, inception_v3
-import time
-import argparse
-import math
-import json
-import pickle
-import numpy as np
+import torch.optim as optim
 from torchnet import meter
-from PIL import ImageFile
+from torchvision import datasets, models, transforms
+from torchvision.models import resnet50
+from torchvision.models.resnet import ResNet50_Weights
 
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+from preprocessing import cifar10_datasets, mini_cifar10_datasets
 
-parser = argparse.ArgumentParser(description="DELTA")
-parser.add_argument("--data_dir")
-parser.add_argument("--save_model", default="")
-parser.add_argument(
-    "--base_model",
-    choices=["resnet50", "resnet101", "inceptionv3"],
-    default="resnet101",
-)
-parser.add_argument(
-    "--base_task", choices=["imagenet", "places365"], default="imagenet"
-)
-parser.add_argument("--max_iter", type=int, default=9000)
-parser.add_argument("--image_size", type=int, default=224)
-parser.add_argument("--batch_size", type=int, default=64)
-parser.add_argument("--lr_scheduler", choices=["steplr", "explr"], default="steplr")
-parser.add_argument("--lr_init", type=float, default=0.01)
-parser.add_argument(
-    "--reg_type", choices=["l2", "l2_sp", "fea_map", "att_fea_map"], default="l2"
-)
-parser.add_argument("--channel_wei", default="")
-parser.add_argument("--alpha", type=float, default=0.01)
-parser.add_argument("--beta", type=float, default=0.01)
-parser.add_argument("--data_aug", choices=["default", "improved"], default="default")
-args = parser.parse_args()
+# Program parameters
+data_dir = None
+save_model = "Yes"
+base_model = "resnet50"
+base_task = "imagenet"
+max_iter = 6000  # default 9000
+image_size = 224
+batch_size = 64
+lr_scheduler = "explr"  # "steplr", "explr"
+lr_init = 0.01
+reg_type = "att_fea_map"  # "l2, "l2_sp", "fea_map", "att_fea_map"
+channel_wei = "./config/channel_wei.cifar10.json"
+alpha = 0.01
+beta = 0.01
 
-print(torch.__version__)
-print(args)
-device = torch.device("cuda:0")
+# Create Datasets
+image_datasets = (
+    cifar10_datasets()
+)  # Dictionary of "set_name":dataset_object (train, test)
 
-image_size = args.image_size
-crop_size = {299: 320, 224: 256}
-resize = crop_size[image_size]
-hflip = transforms.RandomHorizontalFlip()
-rcrop = transforms.RandomCrop((image_size, image_size))
-ccrop = transforms.CenterCrop((image_size, image_size))
-totensor = transforms.ToTensor()
-cnorm = transforms.Normalize(
-    [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
-)  # mean and std for imagenet
+set_names = list(image_datasets.keys())  # List of the dataset names
+dataset_sizes = {x: len(image_datasets[x]) for x in set_names}
+num_classes = 10
 
-
-def transform_compose_train():
-    if args.data_aug == "improved":
-        r = [transforms.Resize(resize), hflip, ccrop, rcrop, totensor, cnorm]
-    elif args.data_aug == "default":
-        r = [transforms.Resize((resize, resize)), hflip, rcrop, totensor, cnorm]
-    return transforms.Compose(r)
-
-
-def transform_compose_test():
-    if args.data_aug == "improved":
-        stack_crop = transforms.Lambda(
-            lambda crops: torch.stack(
-                [cnorm(transforms.ToTensor()(crop)) for crop in crops]
-            )
-        )
-        r = [transforms.Resize(resize), transforms.TenCrop(args.image_size), stack_crop]
-    elif args.data_aug == "default":
-        r = [transforms.Resize((image_size, image_size)), ccrop, totensor, cnorm]
-    return transforms.Compose(r)
-
-
-data_transforms = {"train": transform_compose_train(), "test": transform_compose_test()}
-set_names = list(data_transforms.keys())
-image_datasets = {
-    x: datasets.ImageFolder(os.path.join(args.data_dir, x), data_transforms[x])
-    for x in set_names
-}
+# Dataloaders
 dataloaders = {
     x: torch.utils.data.DataLoader(
-        image_datasets[x], batch_size=args.batch_size, shuffle=True, num_workers=4
+        image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=4
     )
     for x in set_names
 }
-dataset_sizes = {x: len(image_datasets[x]) for x in set_names}
-class_names = image_datasets["train"].classes
-num_classes = len(class_names)
 
+# Set the device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+assert torch.cuda.is_available(), "GPU is not running, using CPU"
 
-def pretrained_model_imagenet(base_model):
-    return eval(base_model)(pretrained=True)
-
-
-def pretrained_model_places365(base_model):
-    assert base_model == "resnet50"
-    model = resnet50(pretrained=False, num_classes=365)
-    state_dict = torch.load(
-        "resnet50_places365_python36.pth.tar", pickle_module=pickle
-    )["state_dict"]
-    state_dict_new = {}
-    for k, v in state_dict.items():
-        state_dict_new[k[len("module.") :]] = v
-    model.load_state_dict(state_dict_new)
-    return model
-
-
-def get_base_model(base_model, base_task):
-    return (
-        pretrained_model_places365(base_model)
-        if base_task == "places365"
-        else pretrained_model_imagenet(base_model)
-    )
-
-
-model_source = get_base_model(args.base_model, args.base_task)
+# Creating the source model
+model_source = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
 model_source.to(device)
 for param in model_source.parameters():
     param.requires_grad = False
@@ -134,13 +63,14 @@ model_source_weights = {}
 for name, param in model_source.named_parameters():
     model_source_weights[name] = param.detach()
 
-model_target = get_base_model(args.base_model, args.base_task)
+# Creating the target model
+model_target = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
 model_target.fc = nn.Linear(2048, num_classes)
 model_target.to(device)
 
 channel_weights = []
-if args.reg_type == "att_fea_map" and args.channel_wei:
-    for js in json.load(open(args.channel_wei)):
+if reg_type == "att_fea_map" and channel_wei:
+    for js in json.load(open(channel_wei)):
         js = np.array(js)
         js = (js - np.mean(js)) / np.std(js)
         cw = torch.from_numpy(js).float().to(device)
@@ -160,24 +90,13 @@ def for_hook_target(module, input, output):
 
 
 fc_name = "fc."
-if args.base_model == "resnet101":
-    hook_layers = [
-        "layer1.2.conv3",
-        "layer2.3.conv3",
-        "layer3.22.conv3",
-        "layer4.2.conv3",
-    ]
-elif args.base_model == "resnet50":
-    hook_layers = [
-        "layer1.2.conv3",
-        "layer2.3.conv3",
-        "layer3.5.conv3",
-        "layer4.2.conv3",
-    ]
-elif args.base_model == "inceptionv3":
-    hook_layers = ["Conv2d_2b_3x3", "Conv2d_4a_3x3", "Mixed_5d", "Mixed_6e"]
-else:
-    assert False
+
+hook_layers = [
+    "layer1.2.conv3",
+    "layer2.3.conv3",
+    "layer3.5.conv3",
+    "layer4.2.conv3",
+]
 
 
 def register_hook(model, func):
@@ -258,34 +177,22 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
             for i, (inputs, labels) in enumerate(dataloaders[phase]):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
-                if args.data_aug == "improved" and phase == "test":
-                    bs, ncrops, c, h, w = inputs.size()
-                    inputs = inputs.view(-1, c, h, w)
 
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase == "train"):
-                    if args.base_model == "inceptionv3":
-                        outputs, _ = model(inputs)
-                    else:
-                        outputs = model(inputs)
-                    if args.data_aug == "improved" and phase == "test":
-                        outputs = outputs.view(bs, ncrops, -1).mean(1)
+                    outputs = model(inputs)
                     loss_main = criterion(outputs, labels)
                     loss_classifier = 0
                     loss_feature = 0
-                    if not args.reg_type == "l2":
+                    if not reg_type == "l2":
                         loss_classifier = reg_classifier(model)
-                    if args.reg_type == "l2_sp":
+                    if reg_type == "l2_sp":
                         loss_feature = reg_l2sp(model)
-                    elif args.reg_type == "fea_map":
+                    elif reg_type == "fea_map":
                         loss_feature = reg_fea_map(inputs)
-                    elif args.reg_type == "att_fea_map":
+                    elif reg_type == "att_fea_map":
                         loss_feature = reg_att_fea_map(inputs)
-                    loss = (
-                        loss_main
-                        + args.alpha * loss_feature
-                        + args.beta * loss_classifier
-                    )
+                    loss = loss_main + alpha * loss_feature + beta * loss_classifier
 
                     _, preds = torch.max(outputs, 1)
                     confusion_matrix.add(preds.data, labels.data)
@@ -299,8 +206,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
                                 nstep,
                                 loss,
                                 loss_main,
-                                args.alpha * loss_feature,
-                                args.beta * loss_classifier,
+                                alpha * loss_feature,
+                                beta * loss_classifier,
                                 step_acc,
                             )
                         )
@@ -350,29 +257,29 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
     return model
 
 
-if args.reg_type == "l2":
+if reg_type == "l2":
     optimizer_ft = optim.SGD(
         filter(lambda p: p.requires_grad, model_target.parameters()),
-        lr=args.lr_init,
+        lr=lr_init,
         momentum=0.9,
         weight_decay=1e-4,
     )
 else:
     optimizer_ft = optim.SGD(
         filter(lambda p: p.requires_grad, model_target.parameters()),
-        lr=args.lr_init,
+        lr=lr_init,
         momentum=0.9,
     )
 
-num_epochs = int(args.max_iter * args.batch_size / dataset_sizes["train"])
-decay_epochs = int(0.67 * args.max_iter * args.batch_size / dataset_sizes["train"]) + 1
+num_epochs = int(max_iter * batch_size / dataset_sizes["train"])
+decay_epochs = int(0.67 * max_iter * batch_size / dataset_sizes["train"]) + 1
 print("StepLR decay epochs = %d" % decay_epochs)
 
-if args.lr_scheduler == "steplr":
+if lr_scheduler == "steplr":
     lr_decay = optim.lr_scheduler.StepLR(
         optimizer_ft, step_size=decay_epochs, gamma=0.1
     )
-elif args.lr_scheduler == "explr":
+elif lr_scheduler == "explr":
     lr_decay = optim.lr_scheduler.ExponentialLR(
         optimizer_ft, gamma=math.exp(math.log(0.1) / decay_epochs)
     )
@@ -380,5 +287,5 @@ elif args.lr_scheduler == "explr":
 criterion = nn.CrossEntropyLoss()
 train_model(model_target, criterion, optimizer_ft, lr_decay, num_epochs)
 
-if args.save_model != "":
-    torch.save(model_target, args.save_model)
+if save_model != "":
+    torch.save(model_target, save_model)
