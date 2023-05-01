@@ -1,112 +1,93 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function, division
+# from __future__ import print_function, division
 
-import os
-import sys
+# import os
+# import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torchvision import datasets, models, transforms
-from torchvision.models import resnet50, resnet101, inception_v3
+
+# import torch.nn.functional as F
+# from torchvision import datasets, models, transforms
+from torchvision.models import resnet50
+from torchvision.models.resnet import ResNet50_Weights
 import time
-import argparse
+
+# import argparse
 import math
 import json
-import pickle
-import numpy as np
-from torchnet import meter
-from PIL import ImageFile
 
-from datasets import cifar10_datasets
+# import pickle
 
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+# import numpy as np
+# from torchnet import meter
+# from PIL import ImageFile
+
+from preprocessing import cifar10_datasets
+
+# ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 ## Parses command line arguments
-parser = argparse.ArgumentParser(description="DELTA")
-parser.add_argument("--data_dir")
-parser.add_argument("--channel_wei")
-parser.add_argument("--batch_size", type=int, default=64)
-parser.add_argument(
-    "--base_model",
-    choices=["resnet50", "resnet101", "inceptionv3"],
-    default="resnet101",
-)
-parser.add_argument(
-    "--base_task", choices=["imagenet", "places365"], default="imagenet"
-)
-parser.add_argument("--image_size", type=int, default=224)
-parser.add_argument("--lr_init", type=float, default=0.01)
-parser.add_argument("--data_aug", choices=["default", "improved"], default="default")
+# parser = argparse.ArgumentParser(description="DELTA")
+# parser.add_argument("--data_dir")
+# parser.add_argument("--channel_wei")
+# parser.add_argument(
+#     "--base_model",
+#     choices=["resnet50", "resnet101", "inceptionv3"],
+#     default="resnet101",
+# )
+# parser.add_argument(
+#     "--base_task", choices=["imagenet", "places365"], default="imagenet"
+# )
+# parser.add_argument("--lr_init", type=float, default=0.01)
 
-args = parser.parse_args()
-print(args)
+# args = parser.parse_args()
+# print(args)
 
-batch_size = args.batch_size
+lr_init = 0.01
 
-image_datasets = cifar10_datasets()        # Dictionary of "set_name":dataset_object (train, test)
-set_names = list(image_datasets.keys())    # List of the dataset names
+## *******
 
+## Creates Datasets and DataLoaders
+batch_size = 64
+
+# Dictionary of "set_name":dataset_object (train, test)
+image_datasets = cifar10_datasets()
+
+set_names = list(image_datasets.keys())  # List of the dataset names
+
+# Dataloaders
 dataloaders = {
     x: torch.utils.data.DataLoader(
         image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=4
     )
     for x in set_names
 }
+
 dataset_sizes = {x: len(image_datasets[x]) for x in set_names}
 class_names = image_datasets["train"].classes
 num_classes = len(class_names)
-device = torch.device("cuda:0")
+
+# Set the device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+assert torch.cuda.is_available(), "GPU is not running, using CPU"
 
 
-def pretrained_model_imagenet(base_model):
-    return eval(base_model)(pretrained=True)
+## ***********
 
+hook_layers = [
+    "layer1.2.conv3",
+    "layer2.3.conv3",
+    "layer3.5.conv3",
+    "layer4.2.conv3",
+]
 
-def pretrained_model_places365(base_model):
-    assert base_model == "resnet50"
-    model = resnet50(pretrained=False, num_classes=365)
-    state_dict = torch.load(
-        "resnet50_places365_python36.pth.tar", pickle_module=pickle
-    )["state_dict"]
-    state_dict_new = {}
-    for k, v in state_dict.items():
-        state_dict_new[k[len("module.") :]] = v
-    model.load_state_dict(state_dict_new)
-    return model
+# model_target = resnet50(pretrained=True)
+model_target = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
 
-
-def get_base_model(base_model, base_task):
-    return (
-        pretrained_model_places365(base_model)
-        if base_task == "places365"
-        else pretrained_model_imagenet(base_model)
-    )
-
-
-model_target = get_base_model(args.base_model, args.base_task)
 model_target.fc = nn.Linear(2048, num_classes)
 model_target = model_target.to(device)
-
-if args.base_model == "resnet101":
-    hook_layers = [
-        "layer1.2.conv3",
-        "layer2.3.conv3",
-        "layer3.22.conv3",
-        "layer4.2.conv3",
-    ]
-elif args.base_model == "resnet50":
-    hook_layers = [
-        "layer1.2.conv3",
-        "layer2.3.conv3",
-        "layer3.5.conv3",
-        "layer4.2.conv3",
-    ]
-elif args.base_model == "inceptionv3":
-    hook_layers = ["Conv2d_2b_3x3", "Conv2d_4a_3x3", "Mixed_5d", "Mixed_6e"]
-else:
-    assert False
 
 
 def train_classifier(model):
@@ -116,7 +97,7 @@ def train_classifier(model):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(
         filter(lambda p: p.requires_grad, model.parameters()),
-        lr=args.lr_init,
+        lr=lr_init,
         momentum=0.9,
         weight_decay=1e-4,
     )
@@ -131,7 +112,6 @@ def train_classifier(model):
         print("-" * 10)
         for phase in ["train", "test"]:
             if phase == "train":
-                scheduler.step()
                 model.train()  # Set model to training mode
             else:
                 model.eval()  # Set model to evaluate mode
@@ -162,6 +142,7 @@ def train_classifier(model):
                 if phase == "train":
                     loss.backward()
                     optimizer.step()
+                    scheduler.step()
 
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
