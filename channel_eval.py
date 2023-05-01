@@ -1,52 +1,60 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function, division
+# from __future__ import print_function, division
 
-import os
-import sys
+# import os
+# import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torchvision import datasets, models, transforms
+
+# import torch.nn.functional as F
+# from torchvision import datasets, models, transforms
 from torchvision.models import resnet50
+from torchvision.models.resnet import ResNet50_Weights
 import time
-import argparse
+
+# import argparse
 import math
 import json
-import pickle
-import numpy as np
-from torchnet import meter
-from PIL import ImageFile
 
-from preprocessing import cifar10_datasets
+# import pickle
+# import numpy as np
+# from torchnet import meter
+# from PIL import ImageFile
 
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+from preprocessing import cifar10_datasets, mini_cifar10_datasets
+
+# ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 ## Parses command line arguments
-parser = argparse.ArgumentParser(description="DELTA")
-parser.add_argument("--data_dir")
-parser.add_argument("--channel_wei")
-parser.add_argument(
-    "--base_model",
-    choices=["resnet50", "resnet101", "inceptionv3"],
-    default="resnet101",
-)
-parser.add_argument(
-    "--base_task", choices=["imagenet", "places365"], default="imagenet"
-)
-parser.add_argument("--lr_init", type=float, default=0.01)
+# parser = argparse.ArgumentParser(description="DELTA")
+# parser.add_argument("--data_dir")
+# parser.add_argument("--channel_wei")
+# parser.add_argument(
+#     "--base_model",
+#     choices=["resnet50", "resnet101", "inceptionv3"],
+#     default="resnet101",
+# )
+# parser.add_argument(
+#     "--base_task", choices=["imagenet", "places365"], default="imagenet"
+# )
+# parser.add_argument("--lr_init", type=float, default=0.01)
 
-args = parser.parse_args()
-print(args)
+# args = parser.parse_args()
+# print(args)
 
-## *******
+
+## Program Parameters
+lr_init = 0.01
+batch_size = 64
+channel_wei = "./config/channel_wei.cifar10.json"
 
 ## Creates Datasets and DataLoaders
-batch_size = 64
+
 
 # Dictionary of "set_name":dataset_object (train, test)
-image_datasets = cifar10_datasets()
+image_datasets = mini_cifar10_datasets()
 
 set_names = list(image_datasets.keys())  # List of the dataset names
 
@@ -59,8 +67,9 @@ dataloaders = {
 }
 
 dataset_sizes = {x: len(image_datasets[x]) for x in set_names}
-class_names = image_datasets["train"].classes
-num_classes = len(class_names)
+# class_names = image_datasets["train"].classes
+# num_classes = len(class_names)
+num_classes = 10
 
 # Set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,7 +85,7 @@ hook_layers = [
     "layer4.2.conv3",
 ]
 
-model_target = resnet50(pretrained=True)
+model_target = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
 model_target.fc = nn.Linear(2048, num_classes)
 model_target = model_target.to(device)
 
@@ -88,7 +97,7 @@ def train_classifier(model):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(
         filter(lambda p: p.requires_grad, model.parameters()),
-        lr=args.lr_init,
+        lr=lr_init,
         momentum=0.9,
         weight_decay=1e-4,
     )
@@ -217,4 +226,4 @@ def feature_weight(model):
 
 train_classifier(model_target)
 filter_weight = feature_weight(model_target)
-json.dump(filter_weight, open(args.channel_wei, "w"))
+json.dump(filter_weight, open(channel_wei, "w"))
