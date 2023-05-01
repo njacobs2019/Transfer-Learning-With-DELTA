@@ -18,8 +18,12 @@ import numpy as np
 from torchnet import meter
 from PIL import ImageFile
 
+from datasets import cifar10_datasets
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+
+## Parses command line arguments
 parser = argparse.ArgumentParser(description="DELTA")
 parser.add_argument("--data_dir")
 parser.add_argument("--channel_wei")
@@ -40,45 +44,10 @@ args = parser.parse_args()
 print(args)
 
 batch_size = args.batch_size
-image_size = args.image_size
-crop_size = {224: 256}
-resize = crop_size[image_size]
-hflip = transforms.RandomHorizontalFlip()
-rcrop = transforms.RandomCrop((image_size, image_size))
-ccrop = transforms.CenterCrop((image_size, image_size))
-totensor = transforms.ToTensor()
-cnorm = transforms.Normalize(
-    [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
-)  # mean and std for imagenet
 
+image_datasets = cifar10_datasets()        # Dictionary of "set_name":dataset_object (train, test)
+set_names = list(image_datasets.keys())    # List of the dataset names
 
-def transform_compose_train():
-    if args.data_aug == "improved":
-        r = [transforms.Resize(resize), hflip, ccrop, rcrop, totensor, cnorm]
-    elif args.data_aug == "default":
-        r = [transforms.Resize((resize, resize)), hflip, rcrop, totensor, cnorm]
-    return transforms.Compose(r)
-
-
-def transform_compose_test():
-    if args.data_aug == "improved":
-        stack_crop = transforms.Lambda(
-            lambda crops: torch.stack(
-                [cnorm(transforms.ToTensor()(crop)) for crop in crops]
-            )
-        )
-        r = [transforms.Resize(256), transforms.TenCrop(224), stack_crop]
-    elif args.data_aug == "default":
-        r = [transforms.Resize((image_size, image_size)), ccrop, totensor, cnorm]
-    return transforms.Compose(r)
-
-
-data_transforms = {"train": transform_compose_train(), "test": transform_compose_test()}
-set_names = list(data_transforms.keys())
-image_datasets = {
-    x: datasets.ImageFolder(os.path.join(args.data_dir, x), data_transforms[x])
-    for x in set_names
-}
 dataloaders = {
     x: torch.utils.data.DataLoader(
         image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=4
