@@ -18,7 +18,7 @@ data_dir = None
 save_model = "Yes"
 base_model = "resnet50"
 base_task = "imagenet"
-max_iter = 6000  # default 9000
+num_epochs = 14
 image_size = 224
 batch_size = 128
 lr_scheduler = "explr"  # "steplr", "explr"
@@ -268,8 +268,7 @@ else:
         momentum=0.9,
     )
 
-num_epochs = int(max_iter * batch_size / dataset_sizes["train"])
-decay_epochs = int(0.67 * max_iter * batch_size / dataset_sizes["train"]) + 1
+decay_epochs = int(0.67 * num_epochs) + 1
 print("StepLR decay epochs = %d" % decay_epochs)
 
 if lr_scheduler == "steplr":
