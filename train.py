@@ -1,7 +1,5 @@
 import json
 import math
-import os
-import sys
 import time
 
 import numpy as np
@@ -10,7 +8,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchnet import meter
-from torchvision import datasets, models, transforms
 from torchvision.models import resnet50
 from torchvision.models.resnet import ResNet50_Weights
 
@@ -23,7 +20,7 @@ base_model = "resnet50"
 base_task = "imagenet"
 max_iter = 6000  # default 9000
 image_size = 224
-batch_size = 64
+batch_size = 128
 lr_scheduler = "explr"  # "steplr", "explr"
 lr_init = 0.01
 reg_type = "att_fea_map"  # "l2, "l2_sp", "fea_map", "att_fea_map"
