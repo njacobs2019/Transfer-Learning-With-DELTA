@@ -1,15 +1,15 @@
 import json
 import math
-import time
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchnet import meter
+from torch.utils.tensorboard import SummaryWriter
 from torchvision.models import resnet50
 from torchvision.models.resnet import ResNet50_Weights
+from tqdm import tqdm
 
 from preprocessing import cifar10_datasets, mini_cifar10_datasets
 
@@ -71,7 +71,7 @@ if reg_type == "att_fea_map" and channel_wei:
         js = np.array(js)
         js = (js - np.mean(js)) / np.std(js)
         cw = torch.from_numpy(js).float().to(device)
-        cw = F.softmax(cw / 5).detach()
+        cw = F.softmax(cw / 5, dim=0).detach()
         channel_weights.append(cw)
 
 layer_outputs_source = []
@@ -151,18 +151,13 @@ def reg_att_fea_map(inputs):
     return fea_loss
 
 
-confusion_matrix = meter.ConfusionMeter(num_classes)
-
-
 def train_model(model, criterion, optimizer, scheduler, num_epochs):
-    since = time.time()
-    for epoch in range(num_epochs):
-        print("Epoch {}/{}".format(epoch, num_epochs - 1))
-        print("-" * 10)
-        confusion_matrix.reset()
+    # TensorBoard
+    writer = SummaryWriter("runs/delta")
+
+    for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch", position=0):
         for phase in ["train", "test"]:
             if phase == "train":
-                scheduler.step()
                 model.train()  # Set model to training mode
             else:
                 model.eval()  # Set model to evaluate mode
@@ -171,7 +166,13 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
             running_corrects = 0
 
             nstep = len(dataloaders[phase])
-            for i, (inputs, labels) in enumerate(dataloaders[phase]):
+            for inputs, labels in tqdm(
+                dataloaders[phase],
+                desc=(phase + "ing batches"),
+                unit="batch",
+                position=1,
+                leave=False,
+            ):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
@@ -192,22 +193,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
                     loss = loss_main + alpha * loss_feature + beta * loss_classifier
 
                     _, preds = torch.max(outputs, 1)
-                    confusion_matrix.add(preds.data, labels.data)
-                    if phase == "train" and i % 10 == 0:
-                        corr_sum = torch.sum(preds == labels.data)
-                        step_acc = corr_sum.double() / len(labels)
-                        print(
-                            "step: %d/%d, loss = %.4f(%.4f, %.4f, %.4f), top1 = %.4f"
-                            % (
-                                i,
-                                nstep,
-                                loss,
-                                loss_main,
-                                alpha * loss_feature,
-                                beta * loss_classifier,
-                                step_acc,
-                            )
-                        )
 
                     if phase == "train":
                         loss.backward()
@@ -219,38 +204,21 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
                 layer_outputs_source.clear()
                 layer_outputs_target.clear()
 
+            if phase == "train":
+                writer.add_scalar("LR", scheduler.get_last_lr(), epoch)
+                scheduler.step()
+
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-            print(
-                "{} epoch: {:d} Loss: {:.4f} Acc: {:.4f}".format(
-                    phase, epoch, epoch_loss, epoch_acc
-                )
-            )
-            time_elapsed = time.time() - since
-            print(
-                "Training complete in {:.0f}m {:.0f}s".format(
-                    time_elapsed // 60, time_elapsed % 60
-                )
-            )
-            if epoch == num_epochs - 1:
-                print(
-                    "{} epoch: last Loss: {:.4f} Acc: {:.4f}".format(
-                        phase, epoch_loss, epoch_acc
-                    )
-                )
+            # Record the loss and accuracy with TensorBoard
+            writer.add_scalar("Loss/" + phase, epoch_loss, epoch)
+            writer.add_scalar("Accuracy/" + phase, epoch_acc, epoch)
 
-            print(confusion_matrix.value())
             if phase == "train" and abs(epoch_loss) > 1e8:
                 break
-        print()
 
-    time_elapsed = time.time() - since
-    print(
-        "Training complete in {:.0f}m {:.0f}s".format(
-            time_elapsed // 60, time_elapsed % 60
-        )
-    )
+    writer.close()
     return model
 
 
