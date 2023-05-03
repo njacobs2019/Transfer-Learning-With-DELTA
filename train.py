@@ -141,7 +141,7 @@ def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=12
 
     def train_model(model, criterion, optimizer, scheduler, num_epochs):
         # TensorBoard
-        writer = SummaryWriter("runs/delta2")
+        writer = SummaryWriter(name)
 
         for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch", position=0):
             for phase in ["train", "test"]:
@@ -198,12 +198,34 @@ def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=12
                 epoch_loss = running_loss / dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
+                # Cache the metrics for logging
+                if epoch == num_epochs - 1:
+                    if phase == "train":
+                        train_metrics = (epoch_loss, epoch_acc)
+                    else:
+                        test_metrics = (epoch_loss, epoch_acc)
+
                 # Record the loss and accuracy with TensorBoard
                 writer.add_scalar("Loss/" + phase, epoch_loss, epoch)
                 writer.add_scalar("Accuracy/" + phase, epoch_acc, epoch)
 
                 if phase == "train" and abs(epoch_loss) > 1e8:
                     break
+
+        writer.add_hparams(
+            {
+                "lr_init": lr_init,
+                "alpha": alpha,
+                "beta": beta,
+                "num_epochs": num_epochs,
+            },
+            {
+                "hparam/test_accuracy": test_metrics[1],
+                "hparam/test_loss": test_metrics[0],
+                "hparam/train_accuracy": train_metrics[1],
+                "hparam/train_loss": train_metrics[0],
+            },
+        )
 
         writer.close()
         return model
@@ -239,4 +261,4 @@ def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=12
 
 
 if __name__ == "__main__":
-    main(name="test_run")
+    main(name="50_epoch_run", num_epochs=50)
