@@ -205,7 +205,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs):
                 layer_outputs_target.clear()
 
             if phase == "train":
-                writer.add_scalar("LR", scheduler.get_last_lr(), epoch)
+                writer.add_scalar("LR", scheduler.get_last_lr()[0], epoch)
                 scheduler.step()
 
             epoch_loss = running_loss / dataset_sizes[phase]
