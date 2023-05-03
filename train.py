@@ -1,5 +1,4 @@
 import json
-import math
 
 import numpy as np
 import torch
@@ -14,9 +13,9 @@ from tqdm import tqdm
 from preprocessing import cifar10_datasets
 
 
-def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=128):
+def main(run_name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=128):
     """
-    This function trains a model with the input hyperparameters and saves it
+    This function trains a model with the input hyperparameters and saves the results to TensorBoard
     """
 
     # Program parameters
@@ -141,7 +140,7 @@ def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=12
 
     def train_model(model, criterion, optimizer, scheduler, num_epochs):
         # TensorBoard
-        writer = SummaryWriter(name)
+        writer = SummaryWriter("runs/" + run_name)
 
         for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch", position=0):
             for phase in ["train", "test"]:
@@ -253,7 +252,7 @@ def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=12
         )
     elif lr_scheduler == "explr":
         lr_decay = optim.lr_scheduler.ExponentialLR(
-            optimizer_ft, gamma=math.exp(math.log(0.1) / decay_epochs)
+            optimizer_ft, gamma=(0.1 / decay_epochs)
         )
 
     criterion = nn.CrossEntropyLoss()
@@ -261,4 +260,4 @@ def main(name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_size=12
 
 
 if __name__ == "__main__":
-    main(name="50_epoch_run", num_epochs=50)
+    main(run_name="test_run", num_epochs=50)
