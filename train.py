@@ -252,7 +252,7 @@ def main(run_name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_siz
         )
     elif lr_scheduler == "explr":
         lr_decay = optim.lr_scheduler.ExponentialLR(
-            optimizer_ft, gamma=(0.1 / decay_epochs)
+            optimizer_ft, gamma=math.exp(math.log(0.1) / decay_epochs)
         )
 
     criterion = nn.CrossEntropyLoss()
