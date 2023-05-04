@@ -13,4 +13,5 @@ This file determines the regularization weights for each filter.  It saves them 
 Running tensorboard:
 ```
 tensorboard --logdir=runs
+tensorboard --logdir ./logs --host 0.0.0.0 --port 6006
 ```
