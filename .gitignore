@@ -1,2 +1,6 @@
 data/
+.data/
 __pycache__/
+.vscode/
+training_runs/
+runs/

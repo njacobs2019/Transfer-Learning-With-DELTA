@@ -39,4 +39,5 @@ def hparam_optimization():
 
 
 if __name__ == "__main__":
-    hparam_optimization()
+	print("Running tune.py")
+	hparam_optimization()

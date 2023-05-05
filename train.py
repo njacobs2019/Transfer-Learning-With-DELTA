@@ -1,4 +1,5 @@
 import json
+import math
 
 import numpy as np
 import torch
@@ -260,4 +261,14 @@ def main(run_name, lr_init=0.01, alpha=0.01, beta=0.01, num_epochs=14, batch_siz
 
 
 if __name__ == "__main__":
-    main(run_name="test_run", num_epochs=50)
+    print("*** Running Single Training Run ***")
+    lr = 0.0049891
+    alpha_ = 0.0014863
+    beta_ = 0.0061748
+    main(
+        run_name="50_epoch_explr_tuned",
+        lr_init=lr,
+        alpha=alpha_,
+        beta=beta_,
+        num_epochs=50,
+    )
