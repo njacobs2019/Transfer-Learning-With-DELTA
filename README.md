@@ -9,6 +9,14 @@ curl https://raw.githubusercontent.com/njacobs2019/Transfer-Learning-With-DELTA/
 ** Takes ~15.5 minutes **
 This file determines the regularization weights for each filter.  It saves them to disk and needs to be run before train.
 
+# preprocessing.py
+This file includes the data transformations and torch dataset.
+
+# train.py
+Contains code for training with DELTA framework.
+
+# tune.py
+Runs the hyperparameter tuning.
 
 Running tensorboard:
 ```
