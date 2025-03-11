@@ -4,3 +4,4 @@ __pycache__/
 .vscode/
 training_runs/
 runs/
+.ruff_cache/
